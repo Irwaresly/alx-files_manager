@@ -1,48 +1,52 @@
-import { promisify } from 'util';
-import { createClient } from 'redis';
+import mongodb from 'mongodb';
+import envLoader from './env_loader';
 
-/**
- * Represents a Redis client.
- */
-class RedisClient {
+class DBClient {
   constructor () {
-    this.client = createClient();
-    this.isClientConnected = true;
+    envLoader();
+    const host = process.env.DB_HOST || 'localhost';
+    const port = process.env.DB_PORT || 27017;
+    const database = process.env.DB_DATABASE || 'files_manager';
+    const dbURL = `mongodb://${host}:${port}/${database}`;
 
-    this.client.on('error', (err) => {
-      console.error('Redis client failed to connect:', err.message || err.toString());
-      this.isClientConnected = false;
-    });
+    this.client = new mongodb.MongoClient(dbURL, { useUnifiedTopology: true });
 
-    this.client.on('connect', () => {
-      this.isClientConnected = true;
-    });
+    // Connect to MongoDB
+    this.connect();
+  }
 
-    this.getAsync = promisify(this.client.GET).bind(this.client);
-    this.setexAsync = promisify(this.client.SETEX).bind(this.client);
-    this.delAsync = promisify(this.client.DEL).bind(this.client);
+  async connect () {
+    try {
+      await this.client.connect();
+      console.log('Connected to MongoDB');
+    } catch (error) {
+      console.error('Error connecting to MongoDB:', error.message);
+      // Optionally handle error (throw/retry/etc.)
+      throw error;
+    }
   }
 
   isAlive () {
-    return this.isClientConnected;
+    return this.client.isConnected();
   }
 
-  async get (key) {
-    return this.getAsync(key);
+  async nbUsers () {
+    return this.client.db().collection('users').countDocuments();
   }
 
-  async set (key, value, duration) {
-    await this.setexAsync(key, duration, value);
+  async nbFiles () {
+    return this.client.db().collection('files').countDocuments();
   }
 
-  async del (key) {
-    await this.delAsync(key);
+  async usersCollection () {
+    return this.client.db().collection('users');
   }
 
-  async quit () {
-    await this.client.quit();
+  async filesCollection () {
+    return this.client.db().collection('files');
   }
 }
 
-export const redisClient = new RedisClient();
-export default redisClient;
+// Export a single instance of DBClient
+const dbClient = new DBClient();
+export default dbClient;
